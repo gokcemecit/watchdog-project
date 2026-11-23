@@ -59,7 +59,16 @@ void check_children(void) {
         for (int i = 0; i < MAX_CHILDREN; i++) {
             if (children[i].pid == pid) {
                 children[i].alive = 0;
-                printf("child %d terminated\n", pid);
+                
+                if (WIFEXITED(status)) {
+                    int code = WEXITSTATUS(status);
+                    printf("child %d exited with code %d\n", pid, code);
+                }
+
+                else if (WIFSIGNALED(status)) {
+                    int sig = WTERMSIG(status);
+                    printf("child %d killed by signal %d\n", pid, sig);
+                }
             }
         }
     }
