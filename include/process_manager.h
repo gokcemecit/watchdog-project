@@ -5,6 +5,7 @@
 #define MAX_RESTARTS 3
 
 #include <sys/types.h>
+#include <signal.h>
 
 struct child {
     pid_t pid;
@@ -14,6 +15,7 @@ struct child {
 };
 
 extern struct child children[MAX_CHILDREN];
+extern volatile sig_atomic_t child_died;
 
 void start_children(void);
 void check_children(void);
