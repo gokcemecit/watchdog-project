@@ -1,3 +1,4 @@
+#include "process_manager.h"
 #include "signal_manager.h"
 
 #include <errno.h>
@@ -31,12 +32,16 @@ int main(void) {
     if (sigemptyset(&block_mask) == -1 ||
         sigaddset(&block_mask, SIGINT) == -1 ||
         sigaddset(&block_mask, SIGTERM) == -1 ||
-        sigaddset(&block_mask, SIGUSR1) == -1) {
+        sigaddset(&block_mask, SIGUSR1) == -1 ||
+        sigaddset(&block_mask, SIGCHLD) == -1) {
         perror("sigemptyset/sigaddset");
         return EXIT_FAILURE;
     }
 
-    printf("watchdog[%d]: started, waiting for signals...\n", (int)getpid());
+    printf("watchdog[%d]: started, launching children...\n", (int)getpid());
+    fflush(stdout);
+
+    start_children();
     fflush(stdout);
 
     while (!shutdown_requested) {
@@ -45,7 +50,7 @@ int main(void) {
             return EXIT_FAILURE;
         }
 
-        while (!shutdown_requested && !report_requested) {
+        while (!shutdown_requested && !report_requested && !child_died) {
             if (sigsuspend(&old_mask) == -1 && errno != EINTR) {
                 perror("sigsuspend");
                 sigprocmask(SIG_SETMASK, &old_mask, NULL);
@@ -56,6 +61,11 @@ int main(void) {
         if (sigprocmask(SIG_SETMASK, &old_mask, NULL) == -1) {
             perror("sigprocmask(SIG_SETMASK)");
             return EXIT_FAILURE;
+        }
+
+        if (child_died) {
+            check_children();
+            fflush(stdout);
         }
 
         if (report_requested) {
