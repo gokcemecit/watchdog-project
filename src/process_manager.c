@@ -63,11 +63,17 @@ void check_children(void) {
                 if (WIFEXITED(status)) {
                     int code = WEXITSTATUS(status);
                     printf("child %d exited with code %d\n", pid, code);
-                }
-
-                else if (WIFSIGNALED(status)) {
+                } else if (WIFSIGNALED(status)) {
                     int sig = WTERMSIG(status);
                     printf("child %d killed by signal %d\n", pid, sig);
+                }
+
+                if (children[i].restarts < MAX_RESTARTS) {
+                    children[i].restarts++;
+                    printf("restarting child (mode %s), attempts %d\n", children[i].mode, children[i].restarts);
+                    start_child(i);
+                } else {
+                    printf("child (mode %s) reached max restarts, giving up\n", children[i].mode);
                 }
             }
         }
