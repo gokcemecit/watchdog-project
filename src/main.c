@@ -21,6 +21,37 @@ static const char *signal_name(int signo) {
     }
 }
 
+static void graceful_shutdown(void) {
+    char log_msg[128];
+
+    snprintf(log_msg, sizeof(log_msg),
+             "Received %s, initiating graceful shutdown",
+             signal_name(shutdown_signal));
+    log_event(log_msg);
+    printf("watchdog[%d]: %s\n", (int)getpid(), log_msg);
+    fflush(stdout);
+
+    for (int i = 0; i < MAX_CHILDREN; i++) {
+        if (!children[i].alive || children[i].pid <= 0) {
+            continue;
+        }
+
+        if (kill(children[i].pid, SIGTERM) == 0) {
+            snprintf(log_msg, sizeof(log_msg),
+                     "Sent SIGTERM to child %d (mode %s)",
+                     (int)children[i].pid,
+                     children[i].mode ? children[i].mode : "unknown");
+            log_event(log_msg);
+            printf("watchdog[%d]: %s\n", (int)getpid(), log_msg);
+            fflush(stdout);
+        } else if (errno == ESRCH) {
+            children[i].alive = 0;
+        } else {
+            perror("kill(SIGTERM)");
+        }
+    }
+}
+
 int main(void) {
     if (setup_signal_handlers() == -1) {
         fprintf(stderr, "watchdog: failed to setup signal handlers\n");
@@ -64,6 +95,10 @@ int main(void) {
             return EXIT_FAILURE;
         }
 
+        if (shutdown_requested) {
+            break;
+        }
+
         if (child_died) {
             check_children();
             fflush(stdout);
@@ -78,9 +113,7 @@ int main(void) {
         }
     }
 
-    printf("watchdog[%d]: received %s, exiting main loop\n",
-           (int)getpid(), signal_name(shutdown_signal));
-    fflush(stdout);
+    graceful_shutdown();
 
     return EXIT_SUCCESS;
 }
