@@ -1,5 +1,6 @@
 #include "process_manager.h"
 #include "signal_manager.h"
+#include "logger.h"
 
 #include <errno.h>
 #include <signal.h>
@@ -73,6 +74,7 @@ int main(void) {
             printf("watchdog[%d]: SIGUSR1 received (status report requested)\n",
                    (int)getpid());
             fflush(stdout);
+            report_status();
         }
     }
 
