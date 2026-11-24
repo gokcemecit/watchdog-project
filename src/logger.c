@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <time.h>
 #include "logger.h"
+#include "process_manager.h"
 
 void log_event(const char *message) {
     FILE *file = fopen("watchdog.log", "a");
@@ -29,4 +30,22 @@ void log_event(const char *message) {
     fprintf(file, "[%s] %s\n", timestamp, message);
 
     fclose(file);
+}
+
+void report_status(void) {
+    char message[256];
+
+    log_event("Child process status report:");
+
+    for (int i = 0; i < MAX_CHILDREN; i++) {
+        snprintf(message, sizeof(message),
+                 "Child %d: PID=%d, Mode=%s, State=%s, Restarts=%d",
+                 i + 1,
+                 (int)children[i].pid,
+                 children[i].mode,
+                 children[i].alive ? "Running" : "Not running",
+                 children[i].restarts);
+
+        log_event(message);
+    }
 }
