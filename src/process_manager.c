@@ -4,6 +4,7 @@
 #include "process_manager.h"
 #include <signal.h>
 #include <sys/wait.h>
+#include <sys/time.h>
 
 struct child children[MAX_CHILDREN];
 
@@ -16,6 +17,11 @@ void stop_restarting(void) {
 }
 
 static void sigchld_handler(int sig) {
+    (void)sig;
+    child_died = 1;
+}
+
+static void sigalrm_handler(int sig) {
     (void)sig;
     child_died = 1;
 }
@@ -45,6 +51,19 @@ void start_children(void) {
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART;
     sigaction(SIGCHLD, &sa, NULL);
+
+    struct sigaction sa_alrm;
+    sa_alrm.sa_handler = sigalrm_handler;
+    sigemptyset(&sa_alrm.sa_mask);
+    sa_alrm.sa_flags = SA_RESTART;
+    sigaction(SIGALRM, &sa_alrm, NULL);
+
+    struct itimerval timer;
+    timer.it_value.tv_sec = 5;
+    timer.it_value.tv_usec = 0;
+    timer.it_interval.tv_sec = 5;
+    timer.it_interval.tv_usec = 0;
+    setitimer(ITIMER_REAL, &timer, NULL);
 
     char *modes[MAX_CHILDREN] = {"crash", "loop"};
 
