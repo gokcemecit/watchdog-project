@@ -2,7 +2,7 @@
 
 cd "$(dirname "$0")/.." || exit 1
 
-echo "===== Process Management Tests ====="
+echo "===== Watchdog Tests ====="
 FAILED=0
 
 make clean
@@ -68,12 +68,66 @@ fi
 
 rm -f tests/process_manager_test.c watchdog_test
 
-rm -f test_crash.txt test_normal.txt watchdog.log
+echo "===== Test 4: SIGUSR1 Status Reporting ====="
+
+rm -f watchdog.log
+
+./watchdog > test_signals.txt 2>&1 &
+WATCHDOG_PID=$!
+
+sleep 1
+
+kill -USR1 "$WATCHDOG_PID"
+
+sleep 1
+
+if grep -q "Child process status report:" watchdog.log &&
+   grep -q "Child 1: PID=" watchdog.log &&
+   grep -q "Child 2: PID=" watchdog.log &&
+   kill -0 "$WATCHDOG_PID" 2>/dev/null; then
+    echo "PASS: SIGUSR1 status reporting"
+else
+    FAILED=1
+    echo "FAIL: SIGUSR1 status reporting"
+fi
+
+kill -TERM "$WATCHDOG_PID"
+wait "$WATCHDOG_PID"
+SHUTDOWN_EXIT=$?
+
+echo "===== Test 5: Graceful Shutdown ====="
+
+if [ "$SHUTDOWN_EXIT" -eq 0 ] &&
+   grep -q "Received SIGTERM, initiating graceful shutdown" test_signals.txt &&
+   grep -q "Sent SIGTERM to child" test_signals.txt &&
+   grep -q "Reaped child" test_signals.txt &&
+   grep -q "Graceful shutdown complete" test_signals.txt &&
+   ! kill -0 "$WATCHDOG_PID" 2>/dev/null; then
+    echo "PASS: Graceful shutdown"
+else
+    FAILED=1
+    echo "FAIL: Graceful shutdown"
+fi
+
+echo "===== Test 6: Log Verification ====="
+
+if [ -s watchdog.log ] &&
+   ! grep -Evq '^\[[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\] .+' watchdog.log &&
+   grep -q "Child process status report:" watchdog.log &&
+   grep -q "Received SIGTERM" watchdog.log &&
+   grep -q "Graceful shutdown complete" watchdog.log; then
+    echo "PASS: Log verification"
+else
+    FAILED=1
+    echo "FAIL: Log verification"
+fi
+
+rm -f test_crash.txt test_normal.txt test_signals.txt watchdog.log
 
 echo "===== Test Summary ====="
 
 if [ "$FAILED" -eq 0 ]; then
-    echo "All process management tests passed."
+    echo "All watchdog tests passed."
 else
     echo "Some tests failed."
 fi
