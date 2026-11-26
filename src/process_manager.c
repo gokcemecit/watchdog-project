@@ -5,6 +5,7 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <sys/time.h>
+#include "logger.h"
 
 struct child children[MAX_CHILDREN];
 
@@ -43,6 +44,12 @@ static void start_child(int i) {
     children[i].pid = pid;
     children[i].alive = 1;
     printf("started child %d (mode %s)\n", pid, children[i].mode);
+    char message[256];
+
+    snprintf(message, sizeof(message),
+         "Started child %d (mode %s)", (int)pid, children[i].mode);
+
+    log_event(message);
 }
 
 void start_children(void) {
@@ -85,24 +92,43 @@ void check_children(void) {
             if (children[i].pid == pid) {
                 children[i].alive = 0;
                 int normal_exit = 0;
+                char message[256];
                 
                 if (WIFEXITED(status)) {
                     int code = WEXITSTATUS(status);
                     printf("child %d exited with code %d\n", pid, code);
+                    snprintf(message, sizeof(message),
+                           "Child %d exited with code %d", (int)pid, code);
+                    log_event(message);
                     if (code == 0) { normal_exit = 1; }
                 } else if (WIFSIGNALED(status)) {
                     int sig = WTERMSIG(status);
                     printf("child %d killed by signal %d\n", pid, sig);
+                    snprintf(message, sizeof(message),
+                         "Child %d killed by signal %d", (int)pid, sig);
+                    log_event(message);
                 }
 
                 if (normal_exit) {
                     printf("child (mode %s) finished normally, not restarting\n", children[i].mode);
+		    snprintf(message, sizeof(message),
+        	           "Child (mode %s) finished normally, not restarting",
+                           children[i].mode);
+                           log_event(message);
                 } else if (restart_enabled && children[i].restarts < MAX_RESTARTS) {
                     children[i].restarts++;
                     printf("restarting child (mode %s), attempts %d\n", children[i].mode, children[i].restarts);
+                    snprintf(message, sizeof(message),
+                              "Restarting child (mode %s), attempts %d",
+                               children[i].mode, children[i].restarts);
+                    log_event(message);
                     start_child(i);
                 } else {
                     printf("child (mode %s) reached max restarts, giving up\n", children[i].mode);
+                    snprintf(message, sizeof(message),
+                            "Child (mode %s) reached max restarts, giving up",
+                            children[i].mode);
+                    log_event(message);
                 }
             }
         }
