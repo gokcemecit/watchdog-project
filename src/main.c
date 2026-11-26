@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -86,6 +87,11 @@ static void reap_shutdown_children(void) {
 
 static void graceful_shutdown(void) {
     char log_msg[128];
+    struct itimerval zero_timer = {{0, 0}, {0, 0}};
+
+    if (setitimer(ITIMER_REAL, &zero_timer, NULL) == -1) {
+        perror("setitimer(disarm)");
+    }
 
     stop_restarting();
 
@@ -138,7 +144,9 @@ static void graceful_shutdown(void) {
         }
 
         struct timespec pause_ts = {0, 100000000L};
-        nanosleep(&pause_ts, NULL);
+        if (nanosleep(&pause_ts, NULL) == -1 && errno != EINTR) {
+            perror("nanosleep");
+        }
         reap_shutdown_children();
     }
 
@@ -219,7 +227,8 @@ int main(void) {
         sigaddset(&block_mask, SIGINT) == -1 ||
         sigaddset(&block_mask, SIGTERM) == -1 ||
         sigaddset(&block_mask, SIGUSR1) == -1 ||
-        sigaddset(&block_mask, SIGCHLD) == -1) {
+        sigaddset(&block_mask, SIGCHLD) == -1 ||
+        sigaddset(&block_mask, SIGALRM) == -1) {
         perror("sigemptyset/sigaddset");
         return EXIT_FAILURE;
     }
