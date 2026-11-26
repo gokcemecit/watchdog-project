@@ -6,7 +6,11 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
+
+#define SHUTDOWN_TIMEOUT_SEC 3
 
 static const char *signal_name(int signo) {
     switch (signo) {
@@ -18,6 +22,65 @@ static const char *signal_name(int signo) {
             return "SIGUSR1";
         default:
             return "UNKNOWN";
+    }
+}
+
+static int has_alive_children(void) {
+    for (int i = 0; i < MAX_CHILDREN; i++) {
+        if (children[i].alive && children[i].pid > 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void reap_shutdown_children(void) {
+    int status;
+    pid_t pid;
+
+    while (1) {
+        pid = waitpid(-1, &status, WNOHANG);
+        if (pid > 0) {
+            char log_msg[128];
+
+            for (int i = 0; i < MAX_CHILDREN; i++) {
+                if (children[i].pid == pid) {
+                    children[i].alive = 0;
+                    break;
+                }
+            }
+
+            if (WIFEXITED(status)) {
+                snprintf(log_msg, sizeof(log_msg),
+                         "Reaped child %d during shutdown (exit code %d)",
+                         (int)pid, WEXITSTATUS(status));
+            } else if (WIFSIGNALED(status)) {
+                snprintf(log_msg, sizeof(log_msg),
+                         "Reaped child %d during shutdown (signal %d)",
+                         (int)pid, WTERMSIG(status));
+            } else {
+                snprintf(log_msg, sizeof(log_msg),
+                         "Reaped child %d during shutdown",
+                         (int)pid);
+            }
+            log_event(log_msg);
+            printf("watchdog[%d]: %s\n", (int)getpid(), log_msg);
+            fflush(stdout);
+        } else if (pid == 0) {
+            break;
+        } else {
+            if (errno == EINTR) {
+                continue;
+            }
+            if (errno == ECHILD) {
+                for (int i = 0; i < MAX_CHILDREN; i++) {
+                    children[i].alive = 0;
+                }
+            } else {
+                perror("waitpid");
+            }
+            break;
+        }
     }
 }
 
@@ -50,6 +113,95 @@ static void graceful_shutdown(void) {
             perror("kill(SIGTERM)");
         }
     }
+
+    struct timespec start_time;
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &start_time) == -1) {
+        perror("clock_gettime");
+        start_time.tv_sec = 0;
+        start_time.tv_nsec = 0;
+    }
+
+    reap_shutdown_children();
+
+    while (has_alive_children()) {
+        if (clock_gettime(CLOCK_MONOTONIC, &now) == -1) {
+            break;
+        }
+
+        double elapsed = (double)(now.tv_sec - start_time.tv_sec) +
+                         (double)(now.tv_nsec - start_time.tv_nsec) / 1e9;
+        if (elapsed >= (double)SHUTDOWN_TIMEOUT_SEC) {
+            break;
+        }
+
+        struct timespec pause_ts = {0, 100000000L};
+        nanosleep(&pause_ts, NULL);
+        reap_shutdown_children();
+    }
+
+    if (has_alive_children()) {
+        for (int i = 0; i < MAX_CHILDREN; i++) {
+            if (!children[i].alive || children[i].pid <= 0) {
+                continue;
+            }
+
+            if (kill(children[i].pid, SIGKILL) == 0) {
+                snprintf(log_msg, sizeof(log_msg),
+                         "Timeout reached, sent SIGKILL to child %d (mode %s)",
+                         (int)children[i].pid,
+                         children[i].mode ? children[i].mode : "unknown");
+                log_event(log_msg);
+                printf("watchdog[%d]: %s\n", (int)getpid(), log_msg);
+                fflush(stdout);
+            } else if (errno == ESRCH) {
+                children[i].alive = 0;
+            } else {
+                perror("kill(SIGKILL)");
+            }
+        }
+    }
+
+    while (1) {
+        int status;
+        pid_t pid = waitpid(-1, &status, 0);
+        if (pid > 0) {
+            for (int i = 0; i < MAX_CHILDREN; i++) {
+                if (children[i].pid == pid) {
+                    children[i].alive = 0;
+                    break;
+                }
+            }
+
+            if (WIFEXITED(status)) {
+                snprintf(log_msg, sizeof(log_msg),
+                         "Final reap: child %d exited with code %d",
+                         (int)pid, WEXITSTATUS(status));
+            } else if (WIFSIGNALED(status)) {
+                snprintf(log_msg, sizeof(log_msg),
+                         "Final reap: child %d terminated by signal %d",
+                         (int)pid, WTERMSIG(status));
+            } else {
+                snprintf(log_msg, sizeof(log_msg),
+                         "Final reap: child %d terminated",
+                         (int)pid);
+            }
+            log_event(log_msg);
+            printf("watchdog[%d]: %s\n", (int)getpid(), log_msg);
+            fflush(stdout);
+        } else if (pid == -1 && errno == EINTR) {
+            continue;
+        } else {
+            if (pid == -1 && errno != ECHILD) {
+                perror("waitpid(final)");
+            }
+            break;
+        }
+    }
+
+    log_event("Graceful shutdown complete");
+    printf("watchdog[%d]: Graceful shutdown complete\n", (int)getpid());
+    fflush(stdout);
 }
 
 int main(void) {
