@@ -87,6 +87,8 @@ static void reap_shutdown_children(void) {
 static void graceful_shutdown(void) {
     char log_msg[128];
 
+    stop_restarting();
+
     snprintf(log_msg, sizeof(log_msg),
              "Received %s, initiating graceful shutdown",
              signal_name(shutdown_signal));

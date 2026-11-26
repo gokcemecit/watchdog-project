@@ -9,6 +9,12 @@ struct child children[MAX_CHILDREN];
 
 volatile sig_atomic_t child_died = 0;
 
+static int restart_enabled = 1;
+
+void stop_restarting(void) {
+    restart_enabled = 0;
+}
+
 static void sigchld_handler(int sig) {
     (void)sig;
     child_died = 1;
@@ -54,21 +60,25 @@ void check_children(void) {
     pid_t pid;
 
     child_died = 0;
-
+    
     while((pid = waitpid(-1, &status, WNOHANG)) > 0) {
         for (int i = 0; i < MAX_CHILDREN; i++) {
             if (children[i].pid == pid) {
                 children[i].alive = 0;
+                int normal_exit = 0;
                 
                 if (WIFEXITED(status)) {
                     int code = WEXITSTATUS(status);
                     printf("child %d exited with code %d\n", pid, code);
+                    if (code == 0) { normal_exit = 1; }
                 } else if (WIFSIGNALED(status)) {
                     int sig = WTERMSIG(status);
                     printf("child %d killed by signal %d\n", pid, sig);
                 }
 
-                if (children[i].restarts < MAX_RESTARTS) {
+                if (normal_exit) {
+                    printf("child (mode %s) finished normally, not restarting\n", children[i].mode);
+                } else if (restart_enabled && children[i].restarts < MAX_RESTARTS) {
                     children[i].restarts++;
                     printf("restarting child (mode %s), attempts %d\n", children[i].mode, children[i].restarts);
                     start_child(i);
