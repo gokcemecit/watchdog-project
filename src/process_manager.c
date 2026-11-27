@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <errno.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include "process_manager.h"
@@ -57,20 +58,26 @@ void start_children(void) {
     sa.sa_handler = sigchld_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART;
-    sigaction(SIGCHLD, &sa, NULL);
+    if (sigaction(SIGCHLD, &sa, NULL) == -1) {
+        perror("sigaction(SIGCHLD)");
+    }
 
     struct sigaction sa_alrm;
     sa_alrm.sa_handler = sigalrm_handler;
     sigemptyset(&sa_alrm.sa_mask);
     sa_alrm.sa_flags = SA_RESTART;
-    sigaction(SIGALRM, &sa_alrm, NULL);
+    if (sigaction(SIGALRM, &sa_alrm, NULL) == -1) {
+        perror("sigaction(SIGALRM)");
+    }
 
     struct itimerval timer;
     timer.it_value.tv_sec = 5;
     timer.it_value.tv_usec = 0;
     timer.it_interval.tv_sec = 5;
     timer.it_interval.tv_usec = 0;
-    setitimer(ITIMER_REAL, &timer, NULL);
+    if (setitimer(ITIMER_REAL, &timer, NULL) == -1) {
+        perror("setitimer");
+    }
 
     char *modes[MAX_CHILDREN] = {"crash", "loop"};
 
@@ -87,7 +94,15 @@ void check_children(void) {
 
     child_died = 0;
     
-    while((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+    while (1) {
+        pid = waitpid(-1, &status, WNOHANG);
+        if (pid == -1 && errno == EINTR) {
+            continue;
+        }
+        if (pid <= 0) {
+            break;
+        }
+
         for (int i = 0; i < MAX_CHILDREN; i++) {
             if (children[i].pid == pid) {
                 children[i].alive = 0;
