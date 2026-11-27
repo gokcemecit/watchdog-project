@@ -13,6 +13,7 @@
 
 #define SHUTDOWN_TIMEOUT_SEC 3
 
+/* Maps handled signal numbers to readable names for logging. */
 static const char *signal_name(int signo) {
     switch (signo) {
         case SIGINT:
@@ -26,6 +27,7 @@ static const char *signal_name(int signo) {
     }
 }
 
+/* Returns 1 if at least one tracked child is still marked alive. */
 static int has_alive_children(void) {
     for (int i = 0; i < MAX_CHILDREN; i++) {
         if (children[i].alive && children[i].pid > 0) {
@@ -35,6 +37,7 @@ static int has_alive_children(void) {
     return 0;
 }
 
+/* Non-blocking reap of exited children during the shutdown timeout window. */
 static void reap_shutdown_children(void) {
     int status;
     pid_t pid;
@@ -85,6 +88,7 @@ static void reap_shutdown_children(void) {
     }
 }
 
+/* Stops timer/restarts, sends SIGTERM, escalates to SIGKILL after timeout, and reaps all children. */
 static void graceful_shutdown(void) {
     char log_msg[128];
     struct itimerval zero_timer = {{0, 0}, {0, 0}};
@@ -102,6 +106,7 @@ static void graceful_shutdown(void) {
     printf("watchdog[%d]: %s\n", (int)getpid(), log_msg);
     fflush(stdout);
 
+    /* 1. Send SIGTERM to all active children. */
     for (int i = 0; i < MAX_CHILDREN; i++) {
         if (!children[i].alive || children[i].pid <= 0) {
             continue;
@@ -122,6 +127,7 @@ static void graceful_shutdown(void) {
         }
     }
 
+    /* 2. Wait up to SHUTDOWN_TIMEOUT_SEC for children to exit gracefully. */
     struct timespec start_time;
     struct timespec now;
     if (clock_gettime(CLOCK_MONOTONIC, &start_time) == -1) {
@@ -150,6 +156,7 @@ static void graceful_shutdown(void) {
         reap_shutdown_children();
     }
 
+    /* 3. Force-kill any children still running after timeout. */
     if (has_alive_children()) {
         for (int i = 0; i < MAX_CHILDREN; i++) {
             if (!children[i].alive || children[i].pid <= 0) {
@@ -172,6 +179,7 @@ static void graceful_shutdown(void) {
         }
     }
 
+    /* 4. Blocking final reap so no zombie processes remain. */
     while (1) {
         int status;
         pid_t pid = waitpid(-1, &status, 0);
@@ -214,6 +222,7 @@ static void graceful_shutdown(void) {
     fflush(stdout);
 }
 
+/* Entry point: sets up signal handlers, starts workers, and runs the main event loop. */
 int main(void) {
     if (setup_signal_handlers() == -1) {
         fprintf(stderr, "watchdog: failed to setup signal handlers\n");
@@ -239,6 +248,7 @@ int main(void) {
     start_children();
     fflush(stdout);
 
+    /* Block watched signals across flag checks, then wait atomically with sigsuspend(). */
     while (!shutdown_requested) {
         if (sigprocmask(SIG_BLOCK, &block_mask, &old_mask) == -1) {
             perror("sigprocmask(SIG_BLOCK)");

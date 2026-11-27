@@ -8,6 +8,7 @@ volatile sig_atomic_t shutdown_requested = 0;
 volatile sig_atomic_t shutdown_signal = 0;
 volatile sig_atomic_t report_requested = 0;
 
+/* Records the first shutdown signal (SIGINT/SIGTERM); async-signal-safe and preserves errno. */
 static void handle_shutdown_signal(int signo) {
     int saved_errno = errno;
 
@@ -19,6 +20,7 @@ static void handle_shutdown_signal(int signo) {
     errno = saved_errno;
 }
 
+/* Marks a pending status report on SIGUSR1; async-signal-safe and preserves errno. */
 static void handle_sigusr1(int signo) {
     int saved_errno = errno;
 
@@ -28,6 +30,7 @@ static void handle_sigusr1(int signo) {
     errno = saved_errno;
 }
 
+/* Installs handlers for SIGINT, SIGTERM, and SIGUSR1 via sigaction(). */
 int setup_signal_handlers(void) {
     struct sigaction sa;
 
@@ -40,7 +43,7 @@ int setup_signal_handlers(void) {
         perror("sigemptyset/sigaddset");
         return -1;
     }
-    sa.sa_flags = 0;
+    sa.sa_flags = 0; /* Do not auto-restart syscalls on shutdown signals. */
 
     if (sigaction(SIGINT, &sa, NULL) == -1) {
         perror("sigaction(SIGINT)");
@@ -58,7 +61,7 @@ int setup_signal_handlers(void) {
         perror("sigemptyset");
         return -1;
     }
-    sa.sa_flags = SA_RESTART;
+    sa.sa_flags = SA_RESTART; /* Restart interrupted I/O; sigsuspend() still wakes. */
 
     if (sigaction(SIGUSR1, &sa, NULL) == -1) {
         perror("sigaction(SIGUSR1)");
