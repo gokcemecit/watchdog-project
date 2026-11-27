@@ -1,15 +1,18 @@
 #!/bin/bash
 
+# move to the project directory
 cd "$(dirname "$0")/.." || exit 1
 
 echo "===== Watchdog Tests ====="
 FAILED=0
 
+# build the project
 make clean
 make || exit 1
 
 echo "===== Test 1: Unexpected Termination ====="
 
+# run watchdog in the background
 ./watchdog > test_crash.txt 2>&1 &
 WATCHDOG_PID=$!
 
@@ -28,6 +31,7 @@ fi
 
 echo "===== Test 2: Restart Limit ====="
 
+# count restart attempts
 RESTART_COUNT=$(grep -c "restarting child (mode crash)" test_crash.txt)
 
 if [ "$RESTART_COUNT" -eq 3 ] &&
@@ -40,6 +44,7 @@ fi
 
 echo "===== Test 3: Normal Termination ====="
 
+# create a temporary version with normal mode
 sed 's/{"crash", "loop"}/{"normal", "loop"}/' \
     src/process_manager.c > tests/process_manager_test.c
 
@@ -57,6 +62,7 @@ sleep 6
 kill -TERM "$WATCHDOG_PID"
 wait "$WATCHDOG_PID"
 
+# check that normal exits do not cause restarts
 if grep -q "exited with code 0" test_normal.txt &&
    grep -q "finished normally, not restarting" test_normal.txt &&
    ! grep -q "restarting child (mode normal)" test_normal.txt; then
@@ -77,6 +83,7 @@ WATCHDOG_PID=$!
 
 sleep 1
 
+# request a status report
 kill -USR1 "$WATCHDOG_PID"
 
 sleep 1
@@ -91,6 +98,7 @@ else
     echo "FAIL: SIGUSR1 status reporting"
 fi
 
+# stop watchdog and save its exit code
 kill -TERM "$WATCHDOG_PID"
 wait "$WATCHDOG_PID"
 SHUTDOWN_EXIT=$?
@@ -111,6 +119,7 @@ fi
 
 echo "===== Test 6: Log Verification ====="
 
+# check timestamp format and required log messages
 if [ -s watchdog.log ] &&
    ! grep -Evq '^\[[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\] .+' watchdog.log &&
    grep -q "Child process status report:" watchdog.log &&
@@ -122,6 +131,7 @@ else
     echo "FAIL: Log verification"
 fi
 
+# remove temporary test files
 rm -f test_crash.txt test_normal.txt test_signals.txt watchdog.log
 
 echo "===== Test Summary ====="

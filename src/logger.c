@@ -3,6 +3,7 @@
 #include "logger.h"
 #include "process_manager.h"
 
+// writes an event to the log file
 void log_event(const char *message) {
     FILE *file = fopen("watchdog.log", "a");
 
@@ -10,7 +11,8 @@ void log_event(const char *message) {
         perror("Error opening log file");
         return;
     }
-
+    
+    // get the current date and time
     time_t now = time(NULL);
     struct tm *time_info = localtime(&now);
 
@@ -21,6 +23,7 @@ void log_event(const char *message) {
 
     char timestamp[30];
 
+    // format the timestamp
     if (strftime(timestamp, sizeof(timestamp),
                  "%Y-%m-%d %H:%M:%S", time_info) == 0) {
         fclose(file);
@@ -32,11 +35,13 @@ void log_event(const char *message) {
     fclose(file);
 }
 
+// reports the status of all child processes
 void report_status(void) {
     char message[256];
 
     log_event("Child process status report:");
 
+    // collect and log each child's information
     for (int i = 0; i < MAX_CHILDREN; i++) {
         snprintf(message, sizeof(message),
                  "Child %d: PID=%d, Mode=%s, State=%s, Restarts=%d",

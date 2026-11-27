@@ -12,17 +12,22 @@ SRCS = src/main.c \
 
 OBJS = $(SRCS:.c=.o)
 
+# build both programs
 all: $(TARGET) $(WORKER)
 
+# build the watchdog
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
 
+# build the worker
 $(WORKER): workers/worker.c
 	$(CC) $(CFLAGS) -o $@ $<
 
+# compile source files into object files
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# remove compiled files
 clean:
 	rm -f $(OBJS) $(TARGET) $(WORKER)
 
